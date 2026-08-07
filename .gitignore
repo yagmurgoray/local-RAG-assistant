@@ -1,0 +1,14 @@
+# Python önbellek dosyaları
+__pycache__/
+*.py[cod]
+
+# SQLite veritabanı
+*.db
+
+# Sanal ortam klasörleri
+venv/
+env/
+.venv/
+
+# Streamlit yapılandırma klasörü
+.streamlit/
