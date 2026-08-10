@@ -189,8 +189,7 @@ if prompt := st.chat_input("Bir soru sorun..."):
             response_placeholder = st.empty()
             full_response = ""
 
-            # temperature=0.0 ile modelin rastgelelik yapmasını tamamen engelliyoruz
-            # temperature parametresini kaldırıp, çalışan orijinal koda dönüyoruz
+           
             for chunk in chat_client.complete_streaming_chat(messages):
                 if chunk.choices and len(chunk.choices) > 0:
                     content = chunk.choices[0].delta.content
