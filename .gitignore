@@ -12,3 +12,11 @@ env/
 
 # Streamlit yapılandırma klasörü
 .streamlit/
+
+# IDE / Editör ayarları
+.vscode/
+.idea/
+
+# İşletim sistemi dosyaları
+.DS_Store
+Thumbs.db
