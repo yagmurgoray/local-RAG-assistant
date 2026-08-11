@@ -1,55 +1,51 @@
-import math
 import sqlite3
 import json
 from foundry_local_sdk import Configuration, FoundryLocalManager
 
-def cosine_similarity(a, b):
-    dot = sum(x * y for x, y in zip(a, b))
-    norm_a = math.sqrt(sum(x * x for x in a))
-    norm_b = math.sqrt(sum(x * x for x in b))
-    return dot / (norm_a * norm_b) if norm_a and norm_b else 0.0
+from config import (
+    APP_NAME,
+    DB_NAME,
+    EMBEDDING_MODEL_NAME,
+    CHAT_MODEL_NAME,
+    TOP_K,
+    SIMILARITY_THRESHOLD,
+    FALLBACK_MESSAGE,
+)
+from rag_utils import find_relevant
 
-def find_relevant(query_embedding, db_records, top_k=2):
-    scores = []
-    for record in db_records:
-        doc_id, doc_content, doc_emb = record
-        score = cosine_similarity(query_embedding, doc_emb)
-        scores.append((doc_id, doc_content, score))
-    scores.sort(key=lambda x: x[2], reverse=True)
-    return scores[:top_k]
 
 def main():
     # 1. Initialize the SDK
-    config = Configuration(app_name="foundry_local_rag")
+    config = Configuration(app_name=APP_NAME)
     FoundryLocalManager.initialize(config)
     manager = FoundryLocalManager.instance
 
     # 2. Load the embedding model
-    embedding_model = manager.catalog.get_model("qwen3-embedding-0.6b")
+    embedding_model = manager.catalog.get_model(EMBEDDING_MODEL_NAME)
     embedding_model.download(lambda p: print(f"\rDownloading embedding model: {p:.1f}%", end="", flush=True))
     print()
     embedding_model.load()
     embedding_client = embedding_model.get_embedding_client()
 
-    # 3. VERİTABANINDAN BELGELERİ ÇEKME
+    # 3. VERITABANINDAN BELGELERI CEKME
     print("Loading documents from SQLite database...")
     db_records = []
-    conn = sqlite3.connect("rag_database.db")
+    conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
-    
+
     try:
         cursor.execute("SELECT id, content, embedding FROM documents")
         for row in cursor.fetchall():
             db_records.append((row[0], row[1], json.loads(row[2])))
         print(f"Loaded {len(db_records)} documents from database.")
     except sqlite3.OperationalError:
-        print("HATA: rag_database.db bulunamadı! Önce setup_db.py dosyasını çalıştırın.")
+        print("HATA: rag_database.db bulunamadi! Once setup_db.py dosyasini calistirin.")
         return
     finally:
         conn.close()
 
     # 4. Load the chat model
-    chat_model = manager.catalog.get_model("qwen2.5-0.5b")
+    chat_model = manager.catalog.get_model(CHAT_MODEL_NAME)
     chat_model.download(lambda p: print(f"\rDownloading chat model: {p:.1f}%", end="", flush=True))
     print()
     chat_model.load()
@@ -58,9 +54,7 @@ def main():
     print("\nModels loaded successfully. Ready for questions.")
     print('Type "quit" to exit.\n')
 
-    # 5. İnteraktif Sorgu Döngüsü
-    SIMILARITY_THRESHOLD = 0.68  # Güvenlik eşik değeri
-
+    # 5. Interaktif Sorgu Dongusu
     while True:
         query = input("Question: ").strip()
         if not query or query.lower() == "quit":
@@ -68,17 +62,19 @@ def main():
 
         query_response = embedding_client.generate_embedding(query)
         query_embedding = query_response.data[0].embedding
-        results = find_relevant(query_embedding, db_records, top_k=2)
-        
+        results = find_relevant(query_embedding, db_records, top_k=TOP_K)
+
         top_score = results[0][2] if results else 0.0
 
-        # KORUMA FİLTRESİ: Eğer en yüksek benzerlik skoru barajın altındaysa LLM'i hiç yorma
+        # KORUMA FILTRESI: Eger en yuksek benzerlik skoru barajin altindaysa LLM'i hic yorma
         if top_score < SIMILARITY_THRESHOLD:
-            print("Answer: Bu konuda veritabanımda yeterli bilgi bulunmamaktadır.\n")
+            print(f"Answer: {FALLBACK_MESSAGE}\n")
             continue
 
         context = "\n".join(f"- {record[1]}" for record in results)
 
+        # NOT: Bu sistem promptu bilinçli olarak degistirilmedi (app.py'deki
+        # "strict" versiyondan farkli). Bu ayri bir guncelleme konusu.
         messages = [
             {
                 "role": "system",
@@ -103,6 +99,7 @@ def main():
     embedding_model.unload()
     chat_model.unload()
     print("Models unloaded. Done!")
+
 
 if __name__ == "__main__":
     main()
